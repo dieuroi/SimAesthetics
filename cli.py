@@ -13,6 +13,14 @@ def init_logging() -> None:
     logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
 
+def spilt(string: str, path_to_save_csv: Path) -> Path:
+    if string == "official":
+        return Path("AVA_1")
+    elif string == "custom":
+        return Path("AVA_2")
+    elif string == "use_path":
+        return path_to_save_csv
+
 @click.group()
 def cli():
     pass
@@ -39,7 +47,8 @@ def prepare_dataset(
 
 
 @click.command("train-model", short_help="Train model")
-@click.option("--path_to_save_csv", help="where save train.csv|val.csv|test.csv", required=True, type=Path)
+@click.option("--split", help="choose a split plan(official|custom|use_path)", default="official", type=str)
+@click.option("--path_to_save_csv", help="where save train.csv|val.csv|test.csv", type=Path)
 @click.option("--path_to_images", help="images directory", required=True, type=Path)
 @click.option("--experiment_dir", help="directory name to save all logs and weight", required=True, type=Path)
 @click.option("--model_type", help="nima mlsp fpg", default="mlsp", type=str)
@@ -51,6 +60,7 @@ def prepare_dataset(
 @click.option("--optimizer_type", help="optimizer type", default="adam", type=str)
 @click.option("--seed", help="random seed", default=42, type=int)
 def train_model(
+    split: str,
     path_to_save_csv: Path,
     path_to_images: Path,
     experiment_dir: Path,
@@ -64,6 +74,7 @@ def train_model(
     seed: int,
 ):
     click.echo("Train and validate model")
+    path_to_save_csv = spilt(split, path_to_save_csv)
     set_up_seed(seed)
     trainer = Trainer(
         path_to_save_csv=path_to_save_csv,
@@ -91,13 +102,15 @@ def get_image_score(path_to_model_state, path_to_image):
 
 
 @click.command("validate-model", short_help="Validate model")
+@click.option("--split", help="choose a split plan(official|custom|use_path)", default="official", type=str)
 @click.option("--path_to_model_state", help="path to model weight .pth file", required=True, type=Path)
-@click.option("--path_to_save_csv", help="where save train.csv|val.csv|test.csv", required=True, type=Path)
 @click.option("--path_to_images", help="images directory", required=True, type=Path)
+@click.option("--path_to_save_csv", help="where save train.csv|val.csv|test.csv", type=Path)
 @click.option("--batch_size", help="batch size", default=128, type=int)
 @click.option("--num_workers", help="number of reading workers", default=16, type=int)
 @click.option("--drop_out", help="drop out", default=0.0, type=float)
-def validate_model(path_to_model_state, path_to_save_csv, path_to_images, batch_size, num_workers, drop_out):
+def validate_model(split, path_to_model_state, path_to_save_csv, path_to_images, batch_size, num_workers, drop_out):
+    path_to_save_csv = spilt(split, path_to_save_csv)
     validate_and_test(
         path_to_model_state=path_to_model_state,
         path_to_save_csv=path_to_save_csv,

@@ -117,7 +117,7 @@ class MobileNetV2(nn.Module):
 def mobile_net_v2(pretrained=True):
     model = MobileNetV2()
     if pretrained:
-        path_to_model = '/home/liuzy/ai/ACodeBase.pytorch/mobilenetv2.pth.tar'
+        path_to_model = './mobilenetv2.pth'
         state_dict = torch.load(path_to_model, map_location=lambda storage, loc: storage)
         model.load_state_dict(state_dict)
     return model

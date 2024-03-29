@@ -59,4 +59,4 @@ def preprocess(file_dir):
 
 
 if '__main__' == __name__:
-    preprocess('/home/liuzy/ai/AVA_dataset/images/test/images')
+    preprocess('/home/bnu/SimAesthetics/ava_dataset/images')
