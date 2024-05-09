@@ -131,11 +131,81 @@ class NIMA(nn.Module):
         return x
 
 
+class FineTunedResNet50(nn.Module):
+    def __init__(self, num_classes=10):
+        super(FineTunedResNet50, self).__init__()
+        self.resnet50 = models.resnet50(pretrained=True)
+        self.resnet50.fc = nn.Linear(self.resnet50.fc.in_features, num_classes)#?
+
+    def forward(self, x):
+        return self.resnet50(x)
+
+
+
+class FineTunedResNet101(nn.Module):
+    def __init__(self, num_classes=10):
+        super(FineTunedResNet101, self).__init__()
+        self.resnet101 = models.resnet101(pretrained=True)
+        self.resnet101.fc = nn.Linear(self.resnet101.fc.in_features, num_classes)
+
+    def forward(self, x):
+        return self.resnet101(x)
+
+
+
+class SliceModel(nn.Module):
+    def __init__(self):
+        super(SliceModel, self).__init__()
+        self.conv1 = nn.Conv2d(in_channels=3, out_channels=64, kernel_size=5)
+        self.conv2 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3)
+        self.conv3 = nn.Conv2d(in_channels=64, out_channels=64, kernel_size=3)
+      
+        self.dropout1 = nn.Dropout(p=0.5)
+
+        self.conv4 = nn.Conv2d(in_channels=64, out_channels=128, kernel_size=2)
+        self.conv5 = nn.Conv2d(in_channels=128, out_channels=128, kernel_size=2)
+
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+
+        self.dropout2 = nn.Dropout(p=0.5)
+
+        self.fc1 = nn.Linear(2048, 1024)
+        self.fc2 = nn.Linear(1024, 512)
+        self.fc3 = nn.Linear(512, d.num_classes)  
+
+    def forward(self, x):
+        x = F.sigmoid(self.conv1(x))
+        x = F.sigmoid(self.conv2(x))
+        x = F.sigmoid(self.conv3(x))
+        x = self.pool(x)
+        x = self.dropout1(x)
+        x = F.sigmoid(self.conv4(x))
+        x = F.sigmoid(self.conv5(x))
+        x = self.pool(x)
+        x = x.view(-1, 2048)  
+        x = F.sigmoid(self.fc1(x))
+        x = F.sigmoid(self.fc2(x))
+        x = self.dropout2(x)
+        x = F.softmax(self.fc3(x), dim=1)
+        return x
+
+
+
 
 def create_model(model_type: str, drop_out: float):
     if model_type == 'nima':
         return NIMA()
     elif model_type == 'mlsp':
         return MLSP()
+    elif model_type == 'resnet50':
+        return FineTunedResNet50()
+    elif model_type == 'resnet101':
+        return FineTunedResNet101()
+    elif model_type == 'slicemodel':
+        return SliceModel()
     else:
         print('Not implemented!')
+
+
+
+
