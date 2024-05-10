@@ -11,19 +11,20 @@ from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
 from common import AverageMeter, Transform
-from dataset import AVADataset
+from dataset import AVADataset, preprocess
 from emd_loss import EDMLoss
 from model import create_model
 from scipy.stats import pearsonr, spearmanr
-
 
 logger = logging.getLogger(__file__)
 
 
 def get_dataloaders(
-    path_to_save_csv: Path, path_to_images: Path, batch_size: int, num_workers: int
+        dataset: str, path_to_save_csv: Path, path_to_images: Path, batch_size: int, num_workers: int
 ) -> Tuple[DataLoader, DataLoader, DataLoader]:
     transform = Transform()
+
+    preprocess(path_to_images)
 
     train_ds = AVADataset(path_to_save_csv / "train.csv", path_to_images, transform.train_transform)
     val_ds = AVADataset(path_to_save_csv / "val.csv", path_to_images, transform.val_transform)
@@ -34,8 +35,8 @@ def get_dataloaders(
     test_ds = DataLoader(test_ds, batch_size=batch_size, num_workers=num_workers, shuffle=False)
     return train_loader, val_loader, test_ds
 
-    
-def emd_dis(x, y_true, dist_r = 1):
+
+def emd_dis(x, y_true, dist_r=1):
     cdf_x = torch.cumsum(x, dim=-1)
     cdf_ytrue = torch.cumsum(y_true, dim=-1)
     if dist_r == 2:
@@ -44,36 +45,38 @@ def emd_dis(x, y_true, dist_r = 1):
         samplewise_emd = torch.mean(torch.abs(cdf_ytrue - cdf_x), dim=-1)
     loss = torch.mean(samplewise_emd)
     return loss
-    
-    
+
+
 def cal_metrics(output, target, bins=10):
     output = np.concatenate(output)
     target = np.concatenate(target)
-    scores_mean = np.dot(output, np.arange(1, bins+1))
-    labels_mean = np.dot(target, np.arange(1, bins+1))
+    scores_mean = np.dot(output, np.arange(1, bins + 1))
+    labels_mean = np.dot(target, np.arange(1, bins + 1))
     srcc, _ = spearmanr(scores_mean, labels_mean)
-    plcc, _ = pearsonr(scores_mean, labels_mean)      
-    mse = ((scores_mean - labels_mean)**2).mean(axis=None)
-    diff = (((scores_mean-float(bins/2)) * (labels_mean-float(bins/2))) >= 0)
+    plcc, _ = pearsonr(scores_mean, labels_mean)
+    mse = ((scores_mean - labels_mean) ** 2).mean(axis=None)
+    diff = (((scores_mean - float(bins / 2)) * (labels_mean - float(bins / 2))) >= 0)
     acc = np.sum(diff) / len(scores_mean) * 100
     output_tensor = torch.from_numpy(np.array(output))
     target_tensor = torch.from_numpy(np.array(target))
     with torch.no_grad():
-        emd1 = emd_dis(output_tensor, target_tensor, dist_r = 1)
-        emd2 = emd_dis(output_tensor, target_tensor, dist_r = 2)             
+        emd1 = emd_dis(output_tensor, target_tensor, dist_r=1)
+        emd2 = emd_dis(output_tensor, target_tensor, dist_r=2)
         return [mse, srcc, plcc, acc, emd1, emd2]
-        
+
 
 def validate_and_test(
-    path_to_save_csv: Path,
-    path_to_images: Path,
-    batch_size: int,
-    num_workers: int,
-    drop_out: float,
-    path_to_model_state: Path,
+        dataset: str,
+        path_to_save_csv: Path,
+        path_to_images: Path,
+        batch_size: int,
+        num_workers: int,
+        drop_out: float,
+        path_to_model_state: Path,
 ) -> None:
     _, val_loader, test_loader = get_dataloaders(
-        path_to_save_csv=path_to_save_csv, path_to_images=path_to_images, batch_size=batch_size, num_workers=num_workers
+        dataset=dataset, path_to_save_csv=path_to_save_csv, path_to_images=path_to_images, batch_size=batch_size,
+        num_workers=num_workers
     )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -114,7 +117,7 @@ def validate_and_test(
     print(f' --> Validation:')
     print(f'     - MSE {metrics[0]:.4f} | SRCC {metrics[1]:.4f} | LCC {metrics[2]:.4f} ')
     print(f'     - Acc {metrics[3]:.2f} | EMD_1 {metrics[4]:.4f}| EMD_2 {metrics[5]:.4f}')
-    #logger.info(f"val loss {validate_losses.avg}; test loss {test_losses.avg}")
+    # logger.info(f"val loss {validate_losses.avg}; test loss {test_losses.avg}")
     logger.info(f"test loss {test_losses.avg}")
 
 
@@ -130,21 +133,23 @@ def get_optimizer(optimizer_type: str, model, init_lr: float) -> torch.optim.Opt
 
 class Trainer:
     def __init__(
-        self,
-        *,
-        path_to_save_csv: Path,
-        path_to_images: Path,
-        num_epoch: int,
-        model_type: str,
-        num_workers: int,
-        batch_size: int,
-        init_lr: float,
-        experiment_dir: Path,
-        drop_out: float,
-        optimizer_type: str,
+            self,
+            *,
+            dataset: str,
+            path_to_save_csv: Path,
+            path_to_images: Path,
+            num_epoch: int,
+            model_type: str,
+            num_workers: int,
+            batch_size: int,
+            init_lr: float,
+            experiment_dir: Path,
+            drop_out: float,
+            optimizer_type: str,
     ):
 
         train_loader, val_loader, _ = get_dataloaders(
+            dataset=dataset,
             path_to_save_csv=path_to_save_csv,
             path_to_images=path_to_images,
             batch_size=batch_size,
