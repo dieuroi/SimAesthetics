@@ -19,17 +19,16 @@ class AVADataset(Dataset):
         with open('data/ratio_dict.pkl', 'rb') as f:
             self.ratios = pickle.load(f)
 
-
     def __len__(self) -> int:
         return self.df.shape[0]
 
     def __getitem__(self, item: int):
         row = self.df.iloc[item]
 
-        image_id = row["image_id"]
-        ratio = np.array(self.ratios.get(image_id, 1.0)).astype('float32')
+        image = row["image"]
+        ratio = np.array(self.ratios.get(image, 1.0)).astype('float32')
 
-        image_path = self.images_path / f"{image_id}.jpg"
+        image_path = self.images_path / image
         image = default_loader(image_path)
         x = self.transform(image)
 
@@ -50,7 +49,7 @@ def preprocess(file_dir):
         try:
             img_obj = Image.open(img_file)
             w, h = img_obj.size
-            ratio_dict[img.split('.')[0]] = w/h
+            ratio_dict[img.split('.')[0]] = w / h
         except:
             print(img)
 
