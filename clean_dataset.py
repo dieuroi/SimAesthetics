@@ -66,8 +66,8 @@ def spilt(df, train_size):
 
 
 def read_TAD66K_csv(path_to_dataset: Path):
-    df_test = pd.read_csv(path_to_dataset / "test.csv", header=None, sep=",")
-    TAD66K_train_val = pd.read_csv(path_to_dataset / "train.csv", header=None, sep=",")
+    df_test = pd.read_csv(path_to_dataset / "test.csv", header=0, sep=",")
+    TAD66K_train_val = pd.read_csv(path_to_dataset / "train.csv", header=0, sep=",")
     df_train, df_val = train_test_split(TAD66K_train_val, test_size=0.2)
     return df_train, df_val, df_test
 
