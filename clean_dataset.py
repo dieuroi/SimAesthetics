@@ -52,12 +52,13 @@ def read_ava_txt(path_to_ava: Path) -> pd.DataFrame:
     df.columns = ["image"] + score_names + tag_names
     # leave only score columns
     df = df[["image"] + score_names]
+    df["image"] = df["image"].astype("str")
     for i in range(df.shape[0]):
         df.iloc[i, 0] = df.iloc[i, 0] + ".jpg"
     return df
 
 
-def spilt_AVA(df, train_size):
+def spilt(df, train_size):
     logger.info("train val test split")
     df_train, df_val_test = train_test_split(df, train_size=train_size)
     df_val, df_test = train_test_split(df_val_test, train_size=0.5)
@@ -71,6 +72,16 @@ def read_TAD66K_csv(path_to_dataset: Path):
     return df_train, df_val, df_test
 
 
+def read_EVA_csv(path_to_dataset: Path):
+    df = pd.read_csv(path_to_dataset / "votes_filtered.csv", header=0, sep="=")
+    df = df.filter(items=["image_id", "score"])
+    df = df.rename(columns={'image_id': 'image'})
+    df["image"] = df["image"].astype("str")
+    for i in range(df.shape[0]):
+        df.iloc[i, 0] = df.iloc[i, 0] + ".jpg"
+    return df
+
+
 def clean_and_split(
         dataset: str, path_to_dataset: Path, path_to_save_csv: Path, path_to_images: Path, train_size: float,
         num_workers: int
@@ -80,7 +91,7 @@ def clean_and_split(
         df = read_ava_txt(path_to_dataset)
         logger.info("removing broken images")
         df = remove_all_not_found_image(df, path_to_images, num_workers=num_workers)
-        df_train, df_val, df_test = spilt_AVA(df, train_size)
+        df_train, df_val, df_test = spilt(df, train_size)
     elif dataset == "TAD66K":
         logger.info("read TAD66K csv")
         df_train, df_val, df_test = read_TAD66K_csv(path_to_dataset)
@@ -88,6 +99,12 @@ def clean_and_split(
         df_train = remove_all_not_found_image(df_train, path_to_images, num_workers=num_workers)
         df_val = remove_all_not_found_image(df_val, path_to_images, num_workers=num_workers)
         df_test = remove_all_not_found_image(df_test, path_to_images, num_workers=num_workers)
+    elif dataset == "EVA":
+        logger.info("read EVA csv")
+        df = read_EVA_csv(path_to_dataset)
+        logger.info("removing broken images")
+        df = remove_all_not_found_image(df, path_to_images, num_workers=num_workers)
+        df_train, df_val, df_test = spilt(df, train_size)
     train_path = path_to_save_csv / "train.csv"
     val_path = path_to_save_csv / "val.csv"
     test_path = path_to_save_csv / "test.csv"
