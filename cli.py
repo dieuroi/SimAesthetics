@@ -20,7 +20,7 @@ def cli():
 
 
 @click.command("prepare-dataset", short_help="Parse, clean and split dataset")
-@click.option("--dataset", help="choose a dataset(official|custom|TAD66K)", default="official", required=True,
+@click.option("--dataset", help="choose a dataset(official|custom|TAD66K|EVA)", default="official", required=True,
               type=str)
 @click.option("--path_to_dataset", help="origin dataset file", type=Path)
 @click.option("--path_to_save_csv", help="where save train.csv|val.csv|test.csv", type=Path)
@@ -44,7 +44,7 @@ def prepare_dataset(
 
 
 @click.command("train-model", short_help="Train model")
-@click.option("--dataset", help="choose a dataset(official|custom|TAD66K)", default="official", type=str)
+@click.option("--dataset", help="choose a dataset(official|custom|TAD66K|EVA)", default="official", type=str)
 @click.option("--path_to_save_csv", help="where save train.csv|val.csv|test.csv", type=Path)
 @click.option("--path_to_images", help="images directory", required=True, type=Path)
 @click.option("--experiment_dir", help="directory name to save all logs and weight", required=True, type=Path)
@@ -100,7 +100,7 @@ def get_image_score(path_to_model_state, path_to_image):
 
 
 @click.command("validate-model", short_help="Validate model")
-@click.option("--dataset", help="choose a dataset(official|custom|TAD66K)", default="official", type=str)
+@click.option("--dataset", help="choose a dataset(official|custom|TAD66K|EVA)", default="official", type=str)
 @click.option("--path_to_model_state", help="path to model weight .pth file", required=True, type=Path)
 @click.option("--path_to_images", help="images directory", required=True, type=Path)
 @click.option("--path_to_save_csv", help="where save train.csv|val.csv|test.csv", type=Path)

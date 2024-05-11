@@ -86,7 +86,7 @@ def clean_and_split(
         dataset: str, path_to_dataset: Path, path_to_save_csv: Path, path_to_images: Path, train_size: float,
         num_workers: int
 ):
-    if dataset == "official" | dataset == "custom":
+    if dataset == "official" or dataset == "custom":
         logger.info("read ava txt")
         df = read_ava_txt(path_to_dataset)
         logger.info("removing broken images")
