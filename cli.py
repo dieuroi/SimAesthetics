@@ -7,19 +7,12 @@ from clean_dataset import clean_and_split
 from common import set_up_seed
 from inference_model import InferenceModel
 from trainer import Trainer, validate_and_test
+from get_dataset import get_dataset_csv
 
 
 def init_logging() -> None:
     logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
-
-def spilt(string: str, path_to_save_csv: Path) -> Path:
-    if string == "official":
-        return Path("AVA_1")
-    elif string == "custom":
-        return Path("AVA_2")
-    elif string == "use_path":
-        return path_to_save_csv
 
 @click.group()
 def cli():
@@ -27,17 +20,21 @@ def cli():
 
 
 @click.command("prepare-dataset", short_help="Parse, clean and split dataset")
-@click.option("--path_to_ava_txt", help="origin AVA.txt file", required=True, type=Path)
-@click.option("--path_to_save_csv", help="where save train.csv|val.csv|test.csv", required=True, type=Path)
+@click.option("--dataset", help="choose a dataset(official|custom|TAD66K|EVA)", default="official", required=True,
+              type=str)
+@click.option("--path_to_dataset", help="origin dataset file", type=Path)
+@click.option("--path_to_save_csv", help="where save train.csv|val.csv|test.csv", type=Path)
 @click.option("--path_to_images", help="images directory", required=True, type=Path)
 @click.option("--train_size", help="train dataset size", default=0.8, type=float)
 @click.option("--num_workers", help="num workers for parallel processing", default=64, type=int)
 def prepare_dataset(
-    path_to_ava_txt: Path, path_to_save_csv: Path, path_to_images: Path, train_size: float, num_workers: int
+        dataset: str, path_to_dataset: Path, path_to_save_csv: Path, path_to_images: Path, train_size: float,
+        num_workers: int
 ):
     click.echo(f"Clean and split dataset to train|val|test in {num_workers} threads. It will takes several minutes")
     clean_and_split(
-        path_to_ava_txt=path_to_ava_txt,
+        dataset=dataset,
+        path_to_dataset=path_to_dataset,
         path_to_save_csv=path_to_save_csv,
         path_to_images=path_to_images,
         train_size=train_size,
@@ -47,7 +44,7 @@ def prepare_dataset(
 
 
 @click.command("train-model", short_help="Train model")
-@click.option("--split", help="choose a split plan(official|custom|use_path)", default="official", type=str)
+@click.option("--dataset", help="choose a dataset(official|custom|TAD66K|EVA)", default="official", type=str)
 @click.option("--path_to_save_csv", help="where save train.csv|val.csv|test.csv", type=Path)
 @click.option("--path_to_images", help="images directory", required=True, type=Path)
 @click.option("--experiment_dir", help="directory name to save all logs and weight", required=True, type=Path)
@@ -59,8 +56,9 @@ def prepare_dataset(
 @click.option("--drop_out", help="drop out", default=0.5, type=float)
 @click.option("--optimizer_type", help="optimizer type", default="adam", type=str)
 @click.option("--seed", help="random seed", default=42, type=int)
+@click.option("--criterion", help="criterion", default="emd", type=str)
 def train_model(
-    split: str,
+    dataset: str,
     path_to_save_csv: Path,
     path_to_images: Path,
     experiment_dir: Path,
@@ -72,11 +70,13 @@ def train_model(
     drop_out: float,
     optimizer_type: str,
     seed: int,
+    criterion: str,
 ):
     click.echo("Train and validate model")
-    path_to_save_csv = spilt(split, path_to_save_csv)
+    path_to_save_csv = get_dataset_csv(dataset, path_to_save_csv)
     set_up_seed(seed)
     trainer = Trainer(
+        dataset=dataset,
         path_to_save_csv=path_to_save_csv,
         path_to_images=path_to_images,
         experiment_dir=experiment_dir,
@@ -87,6 +87,7 @@ def train_model(
         init_lr=init_lr,
         drop_out=drop_out,
         optimizer_type=optimizer_type,
+        criterion=criterion,
     )
     trainer.train_model()
     click.echo("Done!")
@@ -102,16 +103,17 @@ def get_image_score(path_to_model_state, path_to_image):
 
 
 @click.command("validate-model", short_help="Validate model")
-@click.option("--split", help="choose a split plan(official|custom|use_path)", default="official", type=str)
+@click.option("--dataset", help="choose a dataset(official|custom|TAD66K|EVA)", default="official", type=str)
 @click.option("--path_to_model_state", help="path to model weight .pth file", required=True, type=Path)
 @click.option("--path_to_images", help="images directory", required=True, type=Path)
 @click.option("--path_to_save_csv", help="where save train.csv|val.csv|test.csv", type=Path)
 @click.option("--batch_size", help="batch size", default=128, type=int)
 @click.option("--num_workers", help="number of reading workers", default=16, type=int)
 @click.option("--drop_out", help="drop out", default=0.0, type=float)
-def validate_model(split, path_to_model_state, path_to_save_csv, path_to_images, batch_size, num_workers, drop_out):
-    path_to_save_csv = spilt(split, path_to_save_csv)
+def validate_model(dataset, path_to_model_state, path_to_save_csv, path_to_images, batch_size, num_workers, drop_out):
+    path_to_save_csv = get_dataset_csv(dataset, path_to_save_csv)
     validate_and_test(
+        dataset=dataset,
         path_to_model_state=path_to_model_state,
         path_to_save_csv=path_to_save_csv,
         path_to_images=path_to_images,

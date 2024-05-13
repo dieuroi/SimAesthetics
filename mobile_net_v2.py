@@ -121,3 +121,93 @@ def mobile_net_v2(pretrained=True):
         state_dict = torch.load(path_to_model, map_location=lambda storage, loc: storage)
         model.load_state_dict(state_dict)
     return model
+
+
+def resnet365_backbone():
+    arch = 'resnet18'
+    model_file = './resnet18_places365.pth.tar'
+    last_model = models.__dict__[arch](num_classes=365)
+
+    checkpoint = torch.load(model_file, map_location=lambda storage, loc: storage)
+    state_dict = {str.replace(k, 'module.', ''): v for k, v in checkpoint['state_dict'].items()}
+    last_model.load_state_dict(state_dict)
+    return last_model
+
+
+
+def SelfAttentionMap(x):
+    batch_size, in_channels, h, w = x.size()
+    quary = x.view(batch_size, in_channels, -1)
+    key = quary
+    quary = quary.permute(0, 2, 1)
+
+    sim_map = torch.matmul(quary, key)
+
+    ql2 = torch.norm(quary, dim=2, keepdim=True)
+    kl2 = torch.norm(key, dim=1, keepdim=True)
+    sim_map = torch.div(sim_map, torch.matmul(ql2, kl2).clamp(min=1e-8))
+
+    return sim_map
+
+def base_net(pretrained = True):
+    model = mobile_net_v2()
+    model = nn.Sequential(*list(model.children())[:-1])
+    model_dict = model.state_dict()
+
+    if pretrained:
+        path_to_model = "./pretrain_model/u_model.pth"
+        state_dict = torch.load(path_to_model, map_location=lambda storage, loc: storage)
+
+        new_state_dict = OrderedDict()
+        for k,v in state_dict.items():
+            if k[:11] == 'base_model.':
+                name = k[11:]
+            else:
+                name= k
+            new_state_dict[name] = v
+        pretrained_dict = {k: v for k, v in new_state_dict.items() if k in model_dict}
+        model.load_state_dict(pretrained_dict)
+    return model
+
+def sa_net(pretrained = True):
+    model = mobile_net_v2()
+    model = nn.Sequential(*list(model.children())[:-2])
+    model_dict = model.state_dict()
+    if pretrained:
+        path_to_model = "./pretrain_model/e_model.pth"
+        state_dict = torch.load(path_to_model, map_location=lambda storage, loc: storage)
+        from collections import OrderedDict
+        new_state_dict = OrderedDict()
+        for k,v in state_dict.items():
+            if k[:11] == 'base_model.':
+                name = k[11:]
+            else:
+                name= k
+            new_state_dict[name] = v
+        pretrained_dict = {k: v for k, v in new_state_dict.items() if k in model_dict}
+        model.load_state_dict(pretrained_dict)
+
+    return model
+
+
+class CAT(nn.Module):
+    def __init__(self):
+        super(CAT,self).__init__()
+        base_model = base_net(pretrained = True)
+        sa_model = sa_net(pretrained = True)
+        self.base_model = base_model
+        self.sa_model = sa_model
+
+    def forward(self, x):
+        x_base = self.base_model(x)
+        x_sa = self.sa_model(x)
+        x_sa = SelfAttentionMap(x_sa)
+        x = x_base.view(x_base.size(0),-1)
+        x1 = x_sa.view(x_sa.size(0),-1)
+
+        return x,x1
+
+def cat_net():
+    model = CAT()
+    return model
+
