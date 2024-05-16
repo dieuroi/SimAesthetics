@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from typing import Tuple
 
@@ -36,6 +37,20 @@ class AVADataset(Dataset):
         p = y / y.sum()
 
         return x, p, ratio
+
+
+def preprocess_AVA(path_to_csv: Path):
+    csvs = os.listdir(path_to_csv)
+    csvs = [csv for csv in csvs if csv.endswith(".csv")]
+    for csv in csvs:
+        df = pd.read_csv(path_to_csv / csv)
+        df = df.rename(columns={'image_id': 'image'})
+        df["image"] = df["image"].astype("str")
+        for i in range(df.shape[0]):
+            df.iloc[i, 0] = df.iloc[i, 0] + ".jpg"
+        if not os.path.exists(path_to_csv/"preprocess"):
+            os.makedirs(path_to_csv/"preprocess")
+        df.to_csv(path_to_csv/"preprocess"/csv, index=False)
 
 
 def preprocess(file_dir):

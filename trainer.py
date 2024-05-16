@@ -1,3 +1,4 @@
+import os
 import logging
 import time
 from pathlib import Path
@@ -7,8 +8,10 @@ import torch
 import torch.optim
 import numpy as np
 from torch.utils.data import DataLoader
-from torch.utils.tensorboard import SummaryWriter
+from torch.utils.data.distributed import DistributedSampler
+#from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+from collections import OrderedDict
 
 from common import AverageMeter, Transform
 from dataset import AVADataset, preprocess
@@ -17,6 +20,20 @@ from model import create_model
 from scipy.stats import pearsonr, spearmanr
 
 logger = logging.getLogger(__file__)
+
+
+def get_dataset(
+        dataset: str, path_to_save_csv: Path, path_to_images: Path, batch_size: int, num_workers: int
+) -> Tuple[AVADataset, AVADataset, AVADataset]:
+    transform = Transform()
+
+    preprocess(path_to_images)
+
+    train_ds = AVADataset(path_to_save_csv / "train.csv", path_to_images, transform.train_transform)
+    val_ds = AVADataset(path_to_save_csv / "val.csv", path_to_images, transform.val_transform)
+    test_ds = AVADataset(path_to_save_csv / "test.csv", path_to_images, transform.val_transform)
+
+    return train_ds, val_ds, test_ds
 
 
 def get_dataloaders(
@@ -65,6 +82,16 @@ def cal_metrics(output, target, bins=10):
         return [mse, srcc, plcc, acc, emd1, emd2]
 
 
+def is_ddp_ckpt(ckpt):
+    sd = OrderedDict()
+    for item in ckpt["state_dict"].items():
+        if 'module.' not in item[0]:
+            return False, sd
+        sd_key = item[0][7:]  #remove 'module.'
+        sd[sd_key] = item[1]
+    return True, sd
+
+
 def validate_and_test(
         dataset: str,
         path_to_save_csv: Path,
@@ -85,7 +112,14 @@ def validate_and_test(
     best_state = torch.load(path_to_model_state)
 
     model = create_model(best_state["model_type"], drop_out=drop_out).to(device)
-    model.load_state_dict(best_state["state_dict"])
+
+    #load weights to cpu
+    ckpt = torch.load(path_to_model_state, map_location=torch.device("cpu"))
+    isddp, sd = is_ddp_ckpt(ckpt)
+    if isddp:
+        model.load_state_dict(sd, strict=True)
+    else:
+        model.load_state_dict(best_state["state_dict"])
 
     model.eval()
     '''
@@ -133,33 +167,45 @@ def get_optimizer(optimizer_type: str, model, init_lr: float) -> torch.optim.Opt
 
 class Trainer:
     def __init__(
-        self,
-        *,
-        dataset: str,
-        path_to_save_csv: Path,
-        path_to_images: Path,
-        num_epoch: int,
-        model_type: str,
-        num_workers: int,
-        batch_size: int,
-        init_lr: float,
-        experiment_dir: Path,
-        drop_out: float,
-        optimizer_type: str,
-        criterion: str,
+            self,
+            *,
+            dataset: str,
+            path_to_save_csv: Path,
+            path_to_images: Path,
+            num_epoch: int,
+            model_type: str,
+            num_workers: int,
+            batch_size: int,
+            init_lr: float,
+            experiment_dir: Path,
+            drop_out: float,
+            checkpoint: str,
+            optimizer_type: str,
+            criterion: str,
+            distributed: bool,
     ):
 
-        train_loader, val_loader, _ = get_dataloaders(
+        train_ds, val_ds, _ = get_dataset(
             dataset=dataset,
             path_to_save_csv=path_to_save_csv,
             path_to_images=path_to_images,
             batch_size=batch_size,
             num_workers=num_workers,
         )
+
+        self.distributed = distributed
+        self.device = self.init_distributed()
+        if self.distributed:
+            train_loader = DataLoader(dataset=train_ds, batch_size=batch_size, num_workers=num_workers, shuffle=False,
+                                      sampler=DistributedSampler(train_ds))
+            val_loader = DataLoader(dataset=val_ds, batch_size=batch_size, num_workers=num_workers, shuffle=False,
+                                    sampler=DistributedSampler(val_ds))
+        else:
+            train_loader = DataLoader(train_ds, batch_size=batch_size, num_workers=num_workers, shuffle=True)
+            val_loader = DataLoader(val_ds, batch_size=batch_size, num_workers=num_workers, shuffle=False)
+
         self.train_loader = train_loader
         self.val_loader = val_loader
-
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
         model = create_model(model_type, drop_out=drop_out).to(self.device)
         optimizer = get_optimizer(optimizer_type=optimizer_type, model=model, init_lr=init_lr)
@@ -176,22 +222,56 @@ class Trainer:
 
         experiment_dir.mkdir(exist_ok=True, parents=True)
         self.experiment_dir = experiment_dir
-        self.writer = SummaryWriter(str(experiment_dir / "logs"))
+        #self.writer = SummaryWriter(str(experiment_dir / "logs"))
         self.num_epoch = num_epoch
+        self.checkpoint = checkpoint
         self.global_train_step = 0
         self.global_val_step = 0
         self.print_freq = 100
+        self.best_loss = float("inf")
+        self.best_state = None
+        self.init_model()
+
+    def init_distributed(self):
+        if self.distributed:
+            torch.distributed.init_process_group(backend="nccl")
+            #self.local_rank = torch.distributed.get_rank()
+            self.local_rank = int(os.environ["LOCAL_RANK"])
+            torch.cuda.set_device(self.local_rank)
+            device = torch.device("cuda", self.local_rank)
+        elif torch.cuda.is_available():
+            device = torch.device("cuda")
+        else:
+            device = torch.device("cpu")
+        return device
+
+    def init_model(self):
+        if self.distributed:
+            self.model = torch.nn.parallel.DistributedDataParallel(self.model, device_ids=[self.local_rank],
+                                                                   output_device=self.local_rank,
+                                                                   find_unused_parameters=True)
+        if not "PlaceHolder" in self.checkpoint:
+            best_model = torch.load(self.experiment_dir / "best_state.pth")
+            best_state_dict = best_model["state_dict"]
+            self.best_loss = best_model["best_loss"]
+            self.best_state = best_model
+            self.model.load_state_dict(best_state_dict)
+        else:
+            print("No existed checkpoint, training from the scratch...")
 
     def train_model(self):
-        best_loss = float("inf")
-        best_state = None
+        best_loss = self.best_loss
+        best_state = self.best_state
         for e in range(1, self.num_epoch + 1):
             train_loss = self.train()
+            local_rank = torch.distributed.get_rank()
+            if local_rank > 0:
+                continue
             val_loss = self.validate()
             self.scheduler.step(metrics=val_loss)
 
-            self.writer.add_scalar("train/loss", train_loss, global_step=e)
-            self.writer.add_scalar("val/loss", val_loss, global_step=e)
+            #self.writer.add_scalar("train/loss", train_loss, global_step=e)
+            #self.writer.add_scalar("val/loss", val_loss, global_step=e)
 
             if best_state is None or val_loss < best_loss:
                 logger.info(f"updated loss from {best_loss} to {val_loss}")
@@ -224,8 +304,8 @@ class Trainer:
             self.optimizer.step()
             train_losses.update(loss.item(), x.size(0))
 
-            self.writer.add_scalar("train/current_loss", train_losses.val, self.global_train_step)
-            self.writer.add_scalar("train/avg_loss", train_losses.avg, self.global_train_step)
+            #self.writer.add_scalar("train/current_loss", train_losses.val, self.global_train_step)
+            #self.writer.add_scalar("train/avg_loss", train_losses.avg, self.global_train_step)
             self.global_train_step += 1
 
             e = time.monotonic()
@@ -249,8 +329,8 @@ class Trainer:
                 loss = self.criterion(p_target=y, p_estimate=y_pred)
                 validate_losses.update(loss.item(), x.size(0))
 
-                self.writer.add_scalar("val/current_loss", validate_losses.val, self.global_val_step)
-                self.writer.add_scalar("val/avg_loss", validate_losses.avg, self.global_val_step)
+                #self.writer.add_scalar("val/current_loss", validate_losses.val, self.global_val_step)
+                #self.writer.add_scalar("val/avg_loss", validate_losses.avg, self.global_val_step)
                 self.global_val_step += 1
 
         return validate_losses.avg

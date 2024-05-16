@@ -54,9 +54,11 @@ def prepare_dataset(
 @click.option("--num_epoch", help="number of epoch", default=32, type=int)
 @click.option("--init_lr", help="initial learning rate", default=0.0001, type=float)
 @click.option("--drop_out", help="drop out", default=0.5, type=float)
+@click.option("--checkpoint", help="checkpoint", default="PlaceHolder", type=str)
 @click.option("--optimizer_type", help="optimizer type", default="adam", type=str)
 @click.option("--seed", help="random seed", default=42, type=int)
 @click.option("--criterion", help="criterion", default="emd", type=str)
+@click.option("--distributed", help="False for single GPU, True for single Node", default="False", type=bool)
 def train_model(
     dataset: str,
     path_to_save_csv: Path,
@@ -68,9 +70,11 @@ def train_model(
     num_epoch: int,
     init_lr: float,
     drop_out: float,
+    checkpoint: str,
     optimizer_type: str,
     seed: int,
     criterion: str,
+    distributed: bool,
 ):
     click.echo("Train and validate model")
     path_to_save_csv = get_dataset_csv(dataset, path_to_save_csv)
@@ -86,8 +90,10 @@ def train_model(
         num_epoch=num_epoch,
         init_lr=init_lr,
         drop_out=drop_out,
+        checkpoint=checkpoint,
         optimizer_type=optimizer_type,
         criterion=criterion,
+        distributed=distributed,
     )
     trainer.train_model()
     click.echo("Done!")
