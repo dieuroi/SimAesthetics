@@ -11,6 +11,8 @@ from torch.utils.data import Dataset
 from torchvision.datasets.folder import default_loader
 from PIL import Image
 
+from clean_dataset import remove_all_not_found_image
+
 
 class AVADataset(Dataset):
     def __init__(self, path_to_csv: Path, images_path: Path, transform):
@@ -39,7 +41,7 @@ class AVADataset(Dataset):
         return x, p, ratio
 
 
-def preprocess_AVA(path_to_csv: Path):
+def preprocess_AVA(path_to_csv: Path, path_to_images: Path, num_workers: int) -> Path:
     csvs = os.listdir(path_to_csv)
     csvs = [csv for csv in csvs if csv.endswith(".csv")]
     for csv in csvs:
@@ -48,9 +50,12 @@ def preprocess_AVA(path_to_csv: Path):
         df["image"] = df["image"].astype("str")
         for i in range(df.shape[0]):
             df.iloc[i, 0] = df.iloc[i, 0] + ".jpg"
-        if not os.path.exists(path_to_csv/"preprocess"):
-            os.makedirs(path_to_csv/"preprocess")
-        df.to_csv(path_to_csv/"preprocess"/csv, index=False)
+        if not os.path.exists(path_to_csv / "preprocess"):
+            os.makedirs(path_to_csv / "preprocess")
+        df = remove_all_not_found_image(df, path_to_images, num_workers=num_workers)
+        df.to_csv(path_to_csv / "preprocess" / csv, index=False)
+
+    return Path(path_to_csv / "preprocess")
 
 
 def preprocess(file_dir):

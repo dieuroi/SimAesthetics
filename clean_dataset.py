@@ -8,6 +8,8 @@ from sklearn.model_selection import train_test_split
 from torchvision.datasets.folder import default_loader
 from tqdm import tqdm
 
+from dataset import preprocess_AVA
+
 logger = logging.getLogger(__file__)
 
 
@@ -86,13 +88,17 @@ def clean_and_split(
         dataset: str, path_to_dataset: Path, path_to_save_csv: Path, path_to_images: Path, train_size: float,
         num_workers: int
 ):
-    if dataset == "official" or dataset == "custom":
-        logger.info("read ava txt")
-        df = read_ava_txt(path_to_dataset)
-        logger.info("removing broken images")
-        df = remove_all_not_found_image(df, path_to_images, num_workers=num_workers)
-        df_train, df_val, df_test = spilt(df, train_size)
-    elif dataset == "TAD66K":
+    if dataset == "official":
+        # logger.info("read ava txt")
+        # df = read_ava_txt(path_to_dataset)
+        # logger.info("removing broken images")
+        # df = remove_all_not_found_image(df, path_to_images, num_workers=num_workers)
+        # df_train, df_val, df_test = spilt(df, train_size)
+        path_to_save_csv = preprocess_AVA(Path("AVA_1"), path_to_images, num_workers=num_workers)
+    elif dataset == "custom":
+        path_to_save_csv = preprocess_AVA(Path("AVA_2"), path_to_images, num_workers=num_workers)
+
+    if dataset == "TAD66K":
         logger.info("read TAD66K csv")
         df_train, df_val, df_test = read_TAD66K_csv(path_to_dataset)
         logger.info("removing broken images")
